@@ -10,14 +10,20 @@ class HypothesisTests:
 
     def __init__(self, filename):
         self.data = pd.read_csv(filename)
+        self.levene = None
+        self.equal_var = None
+        self.t = None
+        self.equal_mean = None
 
-        self.levene = st.levene(self.data.iloc[:, 0].values, self.data.iloc[:, 1].values, center='mean')
+    def do_test(self):
+        self.levene = st.levene(self.data.iloc[:, 0].dropna().values, self.data.iloc[:, 1].dropna().values)
         self.equal_var = self.levene.pvalue > 0.05
 
-        self.t = st.ttest_ind(self.data.iloc[:, 0].values, self.data.iloc[:, 1].values, equal_var=self.equal_var)
+        self.t = st.ttest_ind(self.data.iloc[:, 0].dropna().values, self.data.iloc[:, 1].dropna().values, equal_var=self.equal_var)
         self.equal_mean = self.t.pvalue > 0.05
 
     def print(self):
+        self.do_test()
         self.print_test("Levene's Test", self.equal_var, "W", self.levene.statistic, "Variances")
         print()
         self.print_test("T-test", self.equal_mean, "t", self.t.statistic, "Means")
@@ -31,6 +37,7 @@ class HypothesisTests:
 
 
 class PowerTest:
+
     def __init__(self, effect, power, alpha, filename):
         self.data = pd.read_csv(filename)
         self.ncont = self.data['group'].value_counts()['Control']
@@ -46,6 +53,7 @@ class PowerTest:
 
 
 class ExploratoryDataAnalysis:
+
     def __init__(self, filename):
         self.data = pd.read_csv(filename)
         self.data['date'] = pd.to_datetime(self.data['date'])
@@ -107,5 +115,29 @@ class MannWhitneyTest:
         print(f"Distributions are same: {target_equal}")
 
 
-mwt = MannWhitneyTest('ab_test.csv')
-mwt.print()
+class LogTransformation(HypothesisTests):
+    def __init__(self, filename):
+        super().__init__(filename)
+        self.prepare_data()
+        self.data['log_order_value'] = np.log(self.data['order_value'])
+        self.long = self.data.copy()
+        self.data = self.data.pivot(columns='group', values='log_order_value')
+
+    def prepare_data(self):
+        max_ov = self.data['order_value'].quantile(0.99)
+        max_sd = self.data['session_duration'].quantile(0.99)
+        self.data = self.data.query(f"order_value < {max_ov} \
+                and session_duration < {max_sd}")
+
+    def plot(self):
+        fig, ax = plt.subplots()
+        (self.long['log_order_value']
+         .hist(legend=True, grid=False, ax=ax))
+        ax.set_xlabel("Log order value")
+        ax.set_ylabel("Frequency")
+        plt.show()
+
+
+lt = LogTransformation('ab_test.csv')
+lt.plot()
+lt.print()
