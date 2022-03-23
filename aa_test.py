@@ -45,36 +45,67 @@ class PowerTest:
         print(f"Experimental group: {self.nexp}")
 
 
-# EDA
-df = pd.read_csv('ab_test.csv')
-df['date'] = pd.to_datetime(df['date'])
-df['day'] = df['date'].dt.day
-month = df['date'].dt.month_name().unique()[0]
-dff = (df.groupby(['group', 'day'])
-       .size()
-       .reset_index(name='count')
-       .pivot(index='day', columns='group', values='count')
-       )
-dff.plot(kind='bar', xlabel=month, ylabel='Number of sessions')#
-plt.show()
+class ExploratoryDataAnalysis:
+    def __init__(self, filename):
+        self.data = pd.read_csv(filename)
+        self.data['date'] = pd.to_datetime(self.data['date'])
+        self.data['day'] = self.data['date'].dt.day
 
-# Histograms
-for col_name in ['order_value', 'session_duration']:
-    fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
-    ax = df.hist(column=col_name, by='group', ax=ax)
-    xlab = " ".join(col_name.split("_")).capitalize()
-    fig.supylabel("Frequency")
-    fig.supxlabel(xlab)
-    plt.show()
+    def plots(self):
+        # Bar plot
+        month = self.data['date'].dt.month_name().unique()[0]
+        (self.data.groupby(['group', 'day'])
+           .size()
+           .reset_index(name='count')
+           .pivot(index='day', columns='group', values='count')
+           .plot(kind='bar', xlabel=month, ylabel='Number of sessions')#
+           )
+        plt.show()
 
-# Statistics
-max_ov = df['order_value'].quantile(0.99)
-max_sd = df['session_duration'].quantile(0.99)
+        # Histograms
+        for col_name in ['order_value', 'session_duration']:
+            fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
+            self.data.hist(column=col_name, by='group', ax=ax)
+            xlab = " ".join(col_name.split("_")).capitalize()
+            fig.supylabel("Frequency")
+            fig.supxlabel(xlab)
+            plt.show()
 
-ov = (df.query(f"order_value < {max_ov} \
-        and session_duration < {max_sd}")
-        ['order_value'].values)
+    def print(self):
+        # Statistics
+        max_ov = self.data['order_value'].quantile(0.99)
+        max_sd = self.data['session_duration'].quantile(0.99)
 
-print(f"Mean: {ov.mean():0.02f}")
-print(f"Standard deviation: {ov.std():0.02f}")
-print(f"Max: {ov.max():0.02f}")
+        ov = (self.data.query(f"order_value < {max_ov} \
+                and session_duration < {max_sd}")
+                ['order_value'].values)
+
+        print(f"Mean: {ov.mean():0.02f}")
+        print(f"Standard deviation: {ov.std():0.02f}")
+        print(f"Max: {ov.max():0.02f}")
+
+
+class MannWhitneyTest:
+
+    def __init__(self, filename):
+        self.data = pd.read_csv(filename)
+        self.prepare_data()
+        self.test = st.mannwhitneyu(x=self.data['Control'].dropna(), y=self.data['Experimental'].dropna())
+
+    def prepare_data(self):
+        max_ov = self.data['order_value'].quantile(0.99)
+        max_sd = self.data['session_duration'].quantile(0.99)
+        self.data = (self.data.query(f"order_value < {max_ov} \
+                and session_duration < {max_sd}")
+                .pivot(columns='group', values='order_value'))
+
+    def print(self):
+        (sign, reject, target_equal) = (">", "no", "yes") if self.test.pvalue > 0.05 else ("<=", "yes", "no")
+        print("Mann-Whitney U test")
+        print(f"U1 = {self.test.statistic:0.1f}, p-value {sign} 0.05")
+        print(f"Reject null hypothesis: {reject}")
+        print(f"Distributions are same: {target_equal}")
+
+
+mwt = MannWhitneyTest('ab_test.csv')
+mwt.print()
