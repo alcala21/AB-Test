@@ -3,6 +3,7 @@ import pandas as pd
 import scipy.stats as st
 import numpy as np
 from statsmodels.stats.power import TTestIndPower, TTestPower
+import matplotlib.pyplot as plt
 
 
 class HypothesisTests:
@@ -44,6 +45,36 @@ class PowerTest:
         print(f"Experimental group: {self.nexp}")
 
 
-pt = PowerTest(0.2, 0.8, 0.05, 'ab_test.csv')
-pt.print()
+# EDA
+df = pd.read_csv('ab_test.csv')
+df['date'] = pd.to_datetime(df['date'])
+df['day'] = df['date'].dt.day
+month = df['date'].dt.month_name().unique()[0]
+dff = (df.groupby(['group', 'day'])
+       .size()
+       .reset_index(name='count')
+       .pivot(index='day', columns='group', values='count')
+       )
+dff.plot(kind='bar', xlabel=month, ylabel='Number of sessions')#
+plt.show()
 
+# Histograms
+for col_name in ['order_value', 'session_duration']:
+    fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
+    ax = df.hist(column=col_name, by='group', ax=ax)
+    xlab = " ".join(col_name.split("_")).capitalize()
+    fig.supylabel("Frequency")
+    fig.supxlabel(xlab)
+    plt.show()
+
+# Statistics
+max_ov = df['order_value'].quantile(0.99)
+max_sd = df['session_duration'].quantile(0.99)
+
+ov = (df.query(f"order_value < {max_ov} \
+        and session_duration < {max_sd}")
+        ['order_value'].values)
+
+print(f"Mean: {ov.mean():0.02f}")
+print(f"Standard deviation: {ov.std():0.02f}")
+print(f"Max: {ov.max():0.02f}")
