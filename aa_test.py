@@ -1,6 +1,8 @@
 # write your code here
 import pandas as pd
 import scipy.stats as st
+import numpy as np
+from statsmodels.stats.power import TTestIndPower, TTestPower
 
 
 class HypothesisTests:
@@ -27,5 +29,21 @@ class HypothesisTests:
         print(f"{targets} are equal: {target_equal}")
 
 
-ht = HypothesisTests('aa_test.csv')
-ht.print()
+class PowerTest:
+    def __init__(self, effect, power, alpha, filename):
+        self.data = pd.read_csv(filename)
+        self.ncont = self.data['group'].value_counts()['Control']
+        self.nexp = self.data['group'].value_counts()['Experimental']
+
+        analysis = TTestIndPower()
+        self.size = analysis.solve_power(effect, power=power, nobs1=None, ratio=1.0, alpha=alpha)
+
+    def print(self):
+        print(f"Sample size: {round(self.size / 100) * 100}\n")
+        print(f"Control group: {self.ncont}")
+        print(f"Experimental group: {self.nexp}")
+
+
+pt = PowerTest(0.2, 0.8, 0.05, 'ab_test.csv')
+pt.print()
+
