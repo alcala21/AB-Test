@@ -6,10 +6,23 @@ from statsmodels.stats.power import TTestIndPower, TTestPower
 import matplotlib.pyplot as plt
 
 
-class HypothesisTests:
+class ABTest:
 
     def __init__(self, filename):
         self.data = pd.read_csv(filename)
+
+    def remove_outliers(self):
+        if 'order_value' in self.data.columns:
+            max_ov = self.data['order_value'].quantile(0.99)
+            max_sd = self.data['session_duration'].quantile(0.99)
+            self.data = self.data.query(f"order_value < {max_ov} \
+                    and session_duration < {max_sd}")
+
+
+class HypothesisTests(ABTest):
+
+    def __init__(self, filename):
+        super().__init__(filename)
         self.levene = None
         self.equal_var = None
         self.t = None
@@ -36,15 +49,13 @@ class HypothesisTests:
         print(f"{targets} are equal: {target_equal}")
 
 
-class PowerTest:
+class PowerTest(ABTest):
 
-    def __init__(self, effect, power, alpha, filename):
-        self.data = pd.read_csv(filename)
+    def __init__(self, filename, effect, power, alpha):
+        super().__init__(filename)
         self.ncont = self.data['group'].value_counts()['Control']
         self.nexp = self.data['group'].value_counts()['Experimental']
-
-        analysis = TTestIndPower()
-        self.size = analysis.solve_power(effect, power=power, nobs1=None, ratio=1.0, alpha=alpha)
+        self.size = TTestIndPower().solve_power(effect, power=power, nobs1=None, ratio=1.0, alpha=alpha)
 
     def print(self):
         print(f"Sample size: {round(self.size / 100) * 100}\n")
@@ -52,14 +63,14 @@ class PowerTest:
         print(f"Experimental group: {self.nexp}")
 
 
-class ExploratoryDataAnalysis:
+class ExploratoryDataAnalysis(ABTest):
 
     def __init__(self, filename):
-        self.data = pd.read_csv(filename)
+        super().__init__(filename)
         self.data['date'] = pd.to_datetime(self.data['date'])
         self.data['day'] = self.data['date'].dt.day
 
-    def plots(self):
+    def print(self):
         # Bar plot
         month = self.data['date'].dt.month_name().unique()[0]
         (self.data.groupby(['group', 'day'])
@@ -70,7 +81,6 @@ class ExploratoryDataAnalysis:
            )
         plt.show()
 
-        # Histograms
         for col_name in ['order_value', 'session_duration']:
             fig, ax = plt.subplots(1, 2, sharex=True, sharey=True)
             self.data.hist(column=col_name, by='group', ax=ax)
@@ -79,35 +89,25 @@ class ExploratoryDataAnalysis:
             fig.supxlabel(xlab)
             plt.show()
 
-    def print(self):
-        # Statistics
-        max_ov = self.data['order_value'].quantile(0.99)
-        max_sd = self.data['session_duration'].quantile(0.99)
-
-        ov = (self.data.query(f"order_value < {max_ov} \
-                and session_duration < {max_sd}")
-                ['order_value'].values)
-
-        print(f"Mean: {ov.mean():0.02f}")
-        print(f"Standard deviation: {ov.std():0.02f}")
-        print(f"Max: {ov.max():0.02f}")
+        self.remove_outliers()
+        print(f"Mean: {self.data['order_value'].mean():0.2f}")
+        print(f"Standard deviation: {self.data['order_value'].std():0.2f}")
+        print(f"Max: {self.data['order_value'].max():0.2f}")
 
 
-class MannWhitneyTest:
+class MannWhitneyTest(ABTest):
 
     def __init__(self, filename):
-        self.data = pd.read_csv(filename)
-        self.prepare_data()
-        self.test = st.mannwhitneyu(x=self.data['Control'].dropna(), y=self.data['Experimental'].dropna())
+        super().__init__(filename)
+        self.test = None
+        self.remove_outliers()
 
-    def prepare_data(self):
-        max_ov = self.data['order_value'].quantile(0.99)
-        max_sd = self.data['session_duration'].quantile(0.99)
-        self.data = (self.data.query(f"order_value < {max_ov} \
-                and session_duration < {max_sd}")
-                .pivot(columns='group', values='order_value'))
+    def do_test(self):
+        wdf = self.data.pivot(columns='group', values='order_value')
+        self.test = st.mannwhitneyu(x=wdf['Control'].dropna(), y=wdf['Experimental'].dropna())
 
     def print(self):
+        self.do_test()
         (sign, reject, target_equal) = (">", "no", "yes") if self.test.pvalue > 0.05 else ("<=", "yes", "no")
         print("Mann-Whitney U test")
         print(f"U1 = {self.test.statistic:0.1f}, p-value {sign} 0.05")
@@ -118,18 +118,12 @@ class MannWhitneyTest:
 class LogTransformation(HypothesisTests):
     def __init__(self, filename):
         super().__init__(filename)
-        self.prepare_data()
+        self.remove_outliers()
         self.data['log_order_value'] = np.log(self.data['order_value'])
         self.long = self.data.copy()
         self.data = self.data.pivot(columns='group', values='log_order_value')
 
-    def prepare_data(self):
-        max_ov = self.data['order_value'].quantile(0.99)
-        max_sd = self.data['session_duration'].quantile(0.99)
-        self.data = self.data.query(f"order_value < {max_ov} \
-                and session_duration < {max_sd}")
-
-    def plot(self):
+    def print(self):
         fig, ax = plt.subplots()
         (self.long['log_order_value']
          .hist(legend=True, grid=False, ax=ax))
@@ -137,7 +131,12 @@ class LogTransformation(HypothesisTests):
         ax.set_ylabel("Frequency")
         plt.show()
 
+        super().print()
 
-lt = LogTransformation('ab_test.csv')
-lt.plot()
-lt.print()
+
+# ot = HypothesisTests('aa_test.csv')
+# ot = PowerTest('ab_test.csv', 0.2, 0.8, 0.05)
+# ot = ExploratoryDataAnalysis('ab_test.csv')
+# ot = MannWhitneyTest('ab_test.csv')
+ot = LogTransformation('ab_test.csv')
+ot.print()
